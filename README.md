@@ -1,2 +1,2 @@
 # Uart_comm
-A simple repo for Oled-Keyboar Uart interface
+A simple repo for Oled-Keyboard Uart interface
