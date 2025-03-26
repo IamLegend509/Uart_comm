@@ -2,7 +2,7 @@
 
 module uart_rx_tb;
     // Parameters
-    parameter CLK_FREQ = 50_000_000;  // 50 MHz clock for easier timing
+    parameter CLK_FREQ = 50_000_000;  // 50 MHz clock
     parameter BAUD_RATE = 115200;
     parameter CLK_PERIOD = 20;        // 50MHz = 20ns period
     parameter BIT_PERIOD = CLK_FREQ / BAUD_RATE;  // Clock cycles per bit
@@ -13,9 +13,7 @@ module uart_rx_tb;
     reg        rx;
     wire [7:0] data;
     wire       data_valid;
-    
-    // Test data (ASCII values for '0' through '7')
-    reg [7:0] test_data;
+    integer    i;  // [FIX] Declared integer i outside loops
     
     // DUT instantiation
     uart_rx #(
@@ -38,49 +36,42 @@ module uart_rx_tb;
     // Task to send a byte over UART
     task send_byte;
         input [7:0] byte_to_send;
-        integer i;
         begin
             // Send start bit (low)
             rx = 0;
-            repeat (BIT_PERIOD) @(posedge clk);
+            #(BIT_PERIOD * CLK_PERIOD);  // [FIX] Ensured correct cycle count
             
             // Send data bits (LSB first)
             for (i = 0; i < 8; i = i + 1) begin
                 rx = byte_to_send[i];
-                repeat (BIT_PERIOD) @(posedge clk);
+                #(BIT_PERIOD * CLK_PERIOD);  // [FIX] Consistent timing
             end
             
             // Send stop bit (high)
             rx = 1;
-            repeat (BIT_PERIOD) @(posedge clk);
-            
-            // Wait a bit between bytes
-            repeat (BIT_PERIOD/2) @(posedge clk);
+            #(BIT_PERIOD * CLK_PERIOD);
         end
     endtask
     
-    // Task to send a byte with framing error (no stop bit)
+    // Task to send a byte with framing error (missing stop bit)
     task send_byte_with_framing_error;
         input [7:0] byte_to_send;
-        integer i;
         begin
-            // Send start bit (low)
             rx = 0;
-            repeat (BIT_PERIOD) @(posedge clk);
+            #(BIT_PERIOD * CLK_PERIOD);
             
-            // Send data bits (LSB first)
             for (i = 0; i < 8; i = i + 1) begin
                 rx = byte_to_send[i];
-                repeat (BIT_PERIOD) @(posedge clk);
+                #(BIT_PERIOD * CLK_PERIOD);
             end
             
-            // Send invalid stop bit (low instead of high)
+            // Incorrect stop bit (low instead of high)
             rx = 0;
-            repeat (BIT_PERIOD) @(posedge clk);
+            #(BIT_PERIOD * CLK_PERIOD);
             
-            // Restore line to idle state
+            // Restore to idle state
             rx = 1;
-            repeat (BIT_PERIOD/2) @(posedge clk);
+            #(BIT_PERIOD * CLK_PERIOD);
         end
     endtask
     
@@ -91,48 +82,38 @@ module uart_rx_tb;
         end
     end
     
-    // For Vivado simulation
+    // Dump waveform for debugging
     initial begin
-        // Use $vcdpluson for Vivado, equivalent to $dumpvars
-        $vcdpluson;
+        $dumpfile("uart_rx_tb.vcd");  // [NEW] Added waveform dumping
+        $dumpvars(0, uart_rx_tb);
     end
     
     // Test sequence
     initial begin
-        // Initialize
         rx = 1;      // Idle state is high
-        rst = 1;     // Start with reset
-        test_data = 8'h00;
+        rst = 1;     // Assert reset
+        #200;        // [FIX] Added delay for reset assertion
+        rst = 0;     // Deassert reset
+        #200;
         
-        // Reset sequence
-        #100;
-        rst = 0;
-        #100;
-        
-        // Test Case 1-8: Send numbers '0' through '7'
-        for (integer i = 0; i <= 7; i = i + 1) begin
-            test_data = 8'h30 + i;  // ASCII '0' starts at 0x30
-            $display("\nTest Case %0d: Sending character '%c' (0x%h)", i+1, test_data, test_data);
-            send_byte(test_data);
-            #(BIT_PERIOD * 2);
+        // Send ASCII '0' to '7'
+        for (i = 0; i <= 7; i = i + 1) begin
+            send_byte(8'h30 + i);  // ASCII '0' starts at 0x30
+            #(BIT_PERIOD * 2 * CLK_PERIOD);
         end
         
-        // Test Case 9: Send byte with framing error
-        $display("\nTest Case 9: Sending '3' with framing error");
-        test_data = 8'h33;  // ASCII '3'
-        send_byte_with_framing_error(test_data);
-        #(BIT_PERIOD * 2);
+        // Send framing error
+        send_byte_with_framing_error(8'h33);
+        #(BIT_PERIOD * 2 * CLK_PERIOD);
         
-        // Test Case 10: Send another valid byte to verify recovery
-        $display("\nTest Case 10: Sending '5' to verify recovery");
-        test_data = 8'h35;  // ASCII '5'
-        send_byte(test_data);
-        #(BIT_PERIOD * 2);
+        // Send valid data to check recovery
+        send_byte(8'h35);
+        #(BIT_PERIOD * 2 * CLK_PERIOD);
         
         // End simulation
         $display("\nSimulation complete");
         #1000;
-        $finish;
+        $finish;  // [FIX] Ensured simulation exits cleanly
     end
     
 endmodule
